@@ -1,6 +1,6 @@
 /*
 Q2.Write any serial program convert that to openMP, to MPI program.
-This program is serial matrix multiplication.
+This program is MPI matrix multiplication.
 */
 
 #include <stdio.h>
@@ -9,14 +9,14 @@ This program is serial matrix multiplication.
 #include <mpi.h>
 
 int **matrix_generator(int row,int col);
-int **multiply_matrices(int **matrix_A,int **matrix_B,int rowsA, int colsA,int rowsB,int colsB);
+int **multiply_matrices(int *matrix_A,int **matrix_B,int rowsA, int colsA,int rowsB,int colsB);
 void display_matrix(int **matrixA,int cols,int rows);
 
 int main(int argc,char *argv[])
 {
     srand(time(0));
 
-    int **matrix_A,**matrix_B,**matrix_result,rowsA,colsA,rowsB,colsB,world_rank,world_size;
+    int **matrix_A,**matrix_B,**matrix_result,*scatter_matrix,*gather_matrix, rowsA,colsA,rowsB,colsB,world_rank,world_size;
     
     rowsA = atoi(argv[1]);
     colsA = atoi(argv[2]);
@@ -54,31 +54,23 @@ int main(int argc,char *argv[])
         matrix_A = matrix_generator(rowsA,colsA);
         matrix_B = matrix_generator(rowsB,colsB);
 
-        if(myrank==0)
-        {
-            MPI_Scatter (&matrix_A[0][0], SIZE*SIZE/P, MPI_INT, &matrix_A, SIZE*SIZE/P, MPI_INT, 0, MPI_COMM_WORLD);
-        }
-        else
-        {
-            MPI_Scatter (&matrix_A[0][0], SIZE*SIZE/P, MPI_INT, &matrix_A[0][0], SIZE*SIZE/P, MPI_INT, 0, MPI_COMM_WORLD);
-        }
 
-        MPI_Bcast(matrix_B, rowsB*colsB , MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Scatter (matrix_A, rowsA*colsA/world_size, MPI_INT, scatter_matrix, rowsA*colsA/world_size, MPI_INT, 0, MPI_COMM_WORLD);
 
         MPI_Barrier(MPI_COMM_WORLD);
 
         printf("Scatter complete");
 
-        matrix_result = multiply_matrices(matrix_A,matrix_B,rowsA,colsA,rowsB,colsB);
+        MPI_Bcast(matrix_B, rowsB*colsB , MPI_INT, 0, MPI_COMM_WORLD);
 
-        if(myrank==0)
-        {
-            MPI_Gather (MPI_IN_PLACE, SIZE/P, MPI_INT, &matrix_result[0][0], SIZE/P, MPI_INT, 0, MPI_COMM_WORLD);
-        }
-        else
-        {
-            MPI_Gather (&matrix_result[from][0], SIZE/P, MPI_INT, &matrix_result[0][0], SIZE/P, MPI_INT, 0, MPI_COMM_WORLD);
-        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        printf("Broadcast complete");
+
+        matrix_result = multiply_matrices(scatter_matrix,matrix_B,rowsA,colsA,rowsB,colsB);
+
+        MPI_Gather (scatter_matrix, rowsB, MPI_INT, gather_matrix, rowsB, MPI_INT, 0, MPI_COMM_WORLD);
+
         MPI_Barrier(MPI_COMM_WORLD);
 
         printf("Gather Complete");
@@ -118,20 +110,20 @@ int **matrix_generator(int row, int col)
     return intMatrix;
 }
 
-int **multiply_matrices(int **matrix_A,int **matrix_B,int rowsA, int colsA,int rowsB,int colsB)
+int **multiply_matrices(int *matrix_A,int **matrix_B,int rowsA, int colsA,int rowsB,int colsB)
 {
     int i, j, k, **resMatrix;
 
     resMatrix = (int **)malloc(sizeof(int *) * rowsB); 
 
-    for (i = 0; i < rowsA; i++)
+    for (i = 0; i < colsA; i++)
     {
         resMatrix[i] = (int *)malloc(sizeof(int *) * colsB);
-        for (j = 0;j<colsB;j++)
+        for (j = 0;j<rowsB;j++)
         {
             resMatrix[i][j] = 0;
-            for (k = 0; k < rowsB; k++)                
-            	resMatrix[i][j] = resMatrix[i][j] + matrix_A[i][k] * matrix_B[k][j];        
+//            for (k = 0; k < rowsB; k++)                
+            	resMatrix[i][j] = resMatrix[i][j] + matrix_A[j] * matrix_B[j][i];        
         }
     }
     return resMatrix;
